@@ -8,6 +8,11 @@
 #include <signal.h>
 #include <pthread.h>
 #include <bits/local_lim.h>
+#include <map>
+#include <fstream>
+#include <vector>
+#include <sstream>
+#include <string>
 #include "../common/socket/local_sock.h"
 #include "../common/Player.h"
 #include "../common/Game.h"
@@ -20,6 +25,9 @@ using std::list;
 using std::find;
 using std::remove_if;
 using std::find_if;
+using std::map;
+using std::vector;
+//using std;
 
 /** Function prototypes **/
 char * allocate_hostname();
@@ -30,16 +38,23 @@ void sig_handler(int signum);
 void DisconnectPlayer(const Player & player);
 void ListGames(const Player & player);
 void CreateJoinGame(Player & player, string game_name);
+void LoadPlayersFromDB();
 
 /** Global Variables **/
 int server_sock = 0;    // Server socket
 
 list<Game *> game_list;    // List of open games
+map<string, Player> players; // List of player in database
 
 // Mutex to make sure operations on games list are atomic
 pthread_mutex_t games_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int main() {
+
+    printf("Load players from db....\n");
+    LoadPlayersFromDB();
+    printf("Has %ld players", players.size());
+
     // Signals used to kill the server gracefully
     if(signal(SIGINT, sig_handler) == SIG_ERR)
     {
@@ -187,6 +202,7 @@ void * handle_client(void * arg)
     char temp = '\0';
     int row = 0, col = 0;
     int i = 0;
+    bool isLogin = false;
 
     // Create the player
     Player player(client_sock);
@@ -194,6 +210,15 @@ void * handle_client(void * arg)
     // Always handle the client
     while(client_connected)
     {
+
+
+        // login
+        if (!isLogin)
+        {
+            
+            continue;
+        }
+
         // Process commands or pass game data
         if(player.GetMode() == COMMAND)
         {
@@ -438,4 +463,57 @@ void sig_handler(int signum)
             break;
         default: printf("Unrecognized signal captured: %d", signum);
     }
+}
+
+/*
+* Load list player from DB
+*/
+void LoadPlayersFromDB()
+{
+    // File pointer
+    std::fstream fin;
+  
+    // Open an existing file
+    fin.open(".//accounts.csv", std::ios::in);
+
+    // Get the roll number
+    // of which the data is required
+    int rollnum, roll2, count = 0;
+  
+    // Read the Data from the file
+    // as String Vector
+    vector<string> row;
+    string line, word;
+
+    while (!fin.eof()) {
+  
+        row.clear();
+  
+        // read an entire row and
+        // store it in a string variable 'line'
+        getline(fin, line);
+        
+        // used for breaking words
+        std::stringstream s(line);
+  
+        // read every column data of a row and
+        // store it in a string variable, 'word'
+        while (std::getline(s, word, ',')) {
+  
+            // add all the column data
+            // of a row to a vector
+            row.push_back(word);
+        }
+  
+        Player player;
+        player.SetID(std::stoi(row[0]));
+        player.SetUserName(row[1]);
+        player.SetPassword(row[2]);
+        player.SetRank(row[3]);
+        player.SetStatus(std::stoi(row[4]));
+        player.SetScore(std::stoi(row[5]));
+
+        players[player.GetUserName()] = player;
+    }
+    fin.close();
 }

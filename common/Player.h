@@ -8,11 +8,12 @@
 using std::string;
 
 // Mode used to determine whether player is ingame or not
-enum player_modes { COMMAND, INGAME };
+enum player_modes { COMMAND, INGAME, LOGIN };
 
 class Player {
 public:
     // Constructor
+    Player();
     Player(int socket);
 
     // Copy constructor
@@ -27,6 +28,18 @@ public:
     int GetSocket() const;
     player_modes GetMode() const;
     void SetMode(player_modes mode);
+    void SetRank(string rank);
+    string GetRank() const;
+    string GetUserName() const;
+    void SetUserName(string username);
+    void SetPassword(string password);
+    string GetPassword() const;
+    void SetStatus(int status);
+    int GetStatus() const;
+    void SetID(int id);
+    int GetID() const;
+    void SetScore(int score);
+    int GetScore() const;
 
     // Equality operator overload
     bool operator==(const Player & other) const;
@@ -34,6 +47,12 @@ public:
 private:
     int m_socket;
     string m_name;
+    string m_rank;
+    string m_username;
+    string m_password;
+    int m_id;
+    int m_status;
+    int m_score;
     player_modes m_mode;
 };
 
