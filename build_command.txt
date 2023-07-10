@@ -1,0 +1,7 @@
+server: g++ -pthread -std=c++11 common/Game.cpp common/Game.h common/Player.cpp common/Player.h common/status_codes.h common/status_codes.cpp common/socket/sockets.h common/socket/sockets.cpp server/server.cpp -o server/server
+
+
+
+client: g++ -pthread -std=c++11 common/status_codes.h common/status_codes.cpp common/socket/sockets.h common/socket/sockets.cpp common/Board.cpp common/Board.h client/client.cpp -o client/client
+
+
