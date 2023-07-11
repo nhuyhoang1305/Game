@@ -18,7 +18,9 @@ enum StatusCode
     OTHER_DISCONNECT,   // The other player disconnected
     MOVE,       // A tic tac toe game move
     WIN,        // Somebody won
-    DRAW       // It was a draw
+    DRAW,       // It was a draw
+    NOTLOGIN,    // Check login state
+    DIFFERENCE_RANK // difference rank
 };
 
 // Send a status code to the specified socket

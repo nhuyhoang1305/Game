@@ -4,13 +4,14 @@
 /**
  * Constructor to define game with a name and starting player
  */
-Game::Game(string name, Player player1)
-    : m_player1(player1), m_player2(-1), m_name(name)
-{ }
+Game::Game(string name, Player * player1)
+    : m_player1(player1), m_player2( new Player(-1) ), m_name(name)
+{ 
+}
 
 // Copy Constructor
 Game::Game(const Game & copy)
-    : m_player1(-1), m_player2(-1), m_name("No Name")
+    : m_player1( new Player(-1)) , m_player2( new Player(-1) ), m_name("No Name")
 {
     *this = copy;
 }
@@ -30,7 +31,7 @@ Game *Game::operator=(const Game & rhs)
 
 
 // Returns true if this game has that player
-bool Game::HasPlayer(const Player & player) const
+bool Game::HasPlayer(const Player * player) const
 {
     bool hasplayer = false;
 
@@ -47,9 +48,9 @@ bool Game::HasPlayer(const Player & player) const
  *
  * @return  Either the other player's ID, or -1
  */
-Player Game::GetOtherPlayer(const Player & player) const
+Player * Game::GetOtherPlayer(const Player * player) const
 {
-    Player other(-1);
+    Player * other  = new Player(-1);
 
     if(player == m_player1)
         other = m_player2;
@@ -62,19 +63,19 @@ Player Game::GetOtherPlayer(const Player & player) const
 /**
  * Getters and Setters
  */
-Player Game::GetPlayer1() const {
+Player * Game::GetPlayer1() const {
     return m_player1;
 }
 
-void Game::SetPlayer1(Player m_player1) {
+void Game::SetPlayer1(Player * m_player1) {
     Game::m_player1 = m_player1;
 }
 
-Player Game::GetPlayer2() const {
+Player * Game::GetPlayer2() const {
     return m_player2;
 }
 
-void Game::SetPlayer2(Player m_player2) {
+void Game::SetPlayer2(Player * m_player2) {
     Game::m_player2 = m_player2;
 }
 
@@ -91,4 +92,12 @@ bool Game::operator==(const Game & other) const
 bool Game::operator==(const string & other) const
 {
     return other == m_name;
+}
+
+string Game::ToString() const
+{
+    string msg = "name room: " + m_name + " - ";
+    msg += "Created by: " + m_player1->GetUserName() + " - ";
+    msg += "Rank: " + m_player1->GetRank();
+    return msg;
 }

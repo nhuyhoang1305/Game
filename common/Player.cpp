@@ -2,6 +2,7 @@
 
 // Constructor
 Player::Player()
+    : m_mode(COMMAND)
 { }
 Player::Player(int socket)
     : m_socket(socket), m_name("No Name"), m_mode(COMMAND)
@@ -38,6 +39,11 @@ string Player::GetName() const
     return m_name;
 }
 
+void Player::SetSocket(int socket)
+{
+    m_socket = socket;
+}
+
 int Player::GetSocket() const
 {
     return m_socket;
@@ -59,6 +65,24 @@ void Player::SetRank(string rank)
 }
 string Player::GetRank() const
 {
+
+    if (m_score <= 50)
+    {
+        return "So cap";
+    }
+    else if (m_score <= 150)
+    {
+        return "Tap su";
+    }
+    else if (m_score <= 500)
+    {
+        return "Cao thu";
+    }
+    else
+    {
+        return "Ky thu";
+    }
+
     return m_rank;
 }
 string Player::GetUserName() const
@@ -106,4 +130,14 @@ int Player::GetScore() const
 bool Player::operator==(const Player & other) const
 {
     return m_name == other.m_name;
+}
+
+string Player::ToString() const
+{
+    string player = "";
+    player += "Username: " + this->m_username + "\n";
+    player += "Score: " + std::to_string(this->m_score) + "\n";
+    player += "Rank: " + this->GetRank() + "\n";
+    
+    return player;
 }

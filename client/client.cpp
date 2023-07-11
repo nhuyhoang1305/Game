@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <string>
 #include "../common/socket/local_sock.h"
 #include "../common/status_codes.h"
 #include "../common/socket/sockets.h"
@@ -15,6 +16,7 @@ using std::endl;
 int init_client(char * server_name);
 void ServerDisconnected();
 bool TakeTurn(Board & board);
+std::string char2String(char * message);
 
 int client_sock = 0;
 
@@ -23,24 +25,21 @@ int main(int argc, char ** argv) {
     char buffer[BUF_SIZE];
     bool game_over = false;
     bool ingame = false;
+    bool isLogin = false;
     char temp;
     int row, col;
     StatusCode status;
     Board board;
 
     // Check command line for hostname
-    if(argc != 3)
+    if(argc != 2)
     {
-        fprintf(stderr, "Usage: %s <server name> <display name>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <server name>\n", argv[0]);
         exit(1);
     }
 
     // Initialize the client and get the client's socket
     client_sock = init_client(argv[1]);
-
-    // Send the user's display name
-    snprintf(buffer, BUF_SIZE, "register %s\n", argv[2]);
-    write(client_sock, buffer, strlen(buffer));
 
     // Send user messages to the server
     while(!game_over)
@@ -85,12 +84,12 @@ int main(int argc, char ** argv) {
                 {
                     // You lost D:!!!
                     cout << "You lost! D:" << endl;
-                    game_over = true;
+                    ingame = false;
                 }
                 else if (board.IsDraw())
                 {
                     cout << "You tied" << endl;
-                    game_over = true;
+                    ingame = false;
                 }
                 else
                 {
@@ -118,13 +117,19 @@ int main(int argc, char ** argv) {
             case OTHER_DISCONNECT:
                 cout << "Other player disconnected :(" << endl;
                 cout << "You win by default, congrats!" << endl;
-                game_over = true;
+                ingame = false;
                 break;
             case GAME_EXISTS:
                 cout << "That game already has two players connected. Try again." << endl;
                 break;
             case INVALID_CMD:
                 cout << "Invalid Command" << endl;
+                break;
+            case NOTLOGIN:
+                cout << "Please login: " << endl;
+                break;
+            case DIFFERENCE_RANK:
+                cout << "You can't entry this room because difference ranking" << endl;
                 break;
             default:
                 cout << "Unrecognized response from the server" << endl;
@@ -134,13 +139,81 @@ int main(int argc, char ** argv) {
         // Send commands if not in game yet
         if(!ingame)
         {
+
+            if (!isLogin)
+            {
+                SendString(client_sock, (char *) "LOGIN");
+                char msg[1024];
+                ReceiveString(client_sock, msg);
+                std::string message = char2String(msg);
+
+                if (message == "username")
+                {
+                    cout << "Input username: ";
+                    char username[1024];
+                    std::cin >> username;
+
+                    SendString(client_sock, username);
+                    ReceiveString(client_sock, msg);
+                    message = char2String(msg);
+
+                    if (message == "UNACTIVE")
+                    {
+                        cout << "Your account was disabled" << endl;
+                        close(client_sock);
+                        exit(1);
+                    }
+                    else if (message == "password")
+                    {
+                        while (message == "password")
+                        {
+                            cout << "Input password: ";
+                            char password[1024];
+                            std::cin >> password;
+
+                            SendString(client_sock, password);
+                            ReceiveString(client_sock, msg);
+                            message = char2String(msg);
+                        }
+
+                        if (message == "LOCKED")
+                        {
+                            cout << "You took wrong password 3 times" << endl;
+                            cout << "Your account will be disabled" << endl;
+                            cout << "Please contact admin to reactive your account" << endl;
+                            close(client_sock);
+                            exit(1);
+                        }
+                        else if (message == "Login sucessfully")
+                        {
+                            isLogin = true;
+                            cout << "Your account information:" << endl;
+                            ReceiveString(client_sock, msg);
+                            cout << char2String(msg) << endl;
+                        }
+                    }
+                }
+                else if (message == "NOTFOUND")
+                {
+                    cout << "Your account not exist" << endl;
+                    close(client_sock);
+                    exit(1);
+                }
+
+            }
+
             cout << "Enter a command: ";
 
             // Read a line of text from the user
             fgets(buffer, BUF_SIZE - 1, stdin);
+            int i = 0;
+            for (i = 0; buffer[i] != '\n'; ++i)
+            {
 
+            }
+            buffer[i] = '\0';
             // Write it out to the server
-            write(client_sock, buffer, strlen(buffer));
+            SendString(client_sock, buffer);
         }
     }
 
@@ -241,13 +314,13 @@ bool TakeTurn(Board & board)
     if(board.IsWon())
     {
         cout << "YOU WIN!!!!" << endl;
-        game_over = true;
+        game_over = false;
         SendStatus(client_sock, WIN);
     }
     else if (board.IsDraw())
     {
         cout << "You tied ._." << endl;
-        game_over = true;
+        game_over = false;
         SendStatus(client_sock, DRAW);
     }
 
@@ -260,4 +333,15 @@ void ServerDisconnected()
     printf("You've been disconnected from the server D:\n");
     close(client_sock);
     exit(1);
+}
+
+std::string char2String(char *message)
+{
+    std::string msg = "";
+    for (int i = 0; message[i] != '\0' && int(message[i]) != 127; ++i)
+    {
+        msg += message[i];
+    }
+
+    return msg;
 }

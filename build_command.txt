@@ -5,3 +5,8 @@ server: g++ -pthread -std=c++11 common/Game.cpp common/Game.h common/Player.cpp 
 client: g++ -pthread -std=c++11 common/status_codes.h common/status_codes.cpp common/socket/sockets.h common/socket/sockets.cpp common/Board.cpp common/Board.h client/client.cpp -o client/client
 
 
+Usage:
+./server/server : run server
+
+- client:
+./client/client <name_server>

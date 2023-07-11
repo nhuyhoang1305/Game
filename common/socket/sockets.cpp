@@ -53,3 +53,55 @@ bool ReceiveInt(int socket, int * number)
     *number = ret;
     return true;
 }
+
+/**
+ * Send out an string to the specified player
+ *
+ * @param socket    The socket to send the string to
+ * @param message    The string to send out
+ *
+ * @return  True if the socket is still open, false if the socket was disconnected
+ */
+bool SendString(int socket, char * message)
+{
+    char buffer[1024];
+    int i = 0;
+    for (i = 0; message[i] != '\0' && int(message[i]) != 127; ++i)
+    {
+        buffer[i] = message[i];
+    }
+    buffer[i] = '\0';
+
+    if (write(socket, buffer, sizeof(buffer)) < 0)
+    {
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * Blocks until it receives a string
+ *
+ * @param socket    The socket to send the string to
+ * @param message    The string that was received
+ *
+ * @return  True if the socket is still open, false if the socket was disconnected
+ */
+bool ReceiveString(int socket, char * message)
+{
+    char ret[1024];
+    ssize_t rc;
+
+    rc = read(socket, ret, sizeof(ret));
+
+    if (rc <= 0) return false;
+    int i;
+    for (i = 0; ret[i] != '\0'; ++i)
+    {
+        message[i] = ret[i];
+    }
+    message[i] = '\0';
+
+    return true;
+}

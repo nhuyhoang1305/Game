@@ -8,6 +8,6 @@
 #define MAX_BACKLOG 5
 
 // Maximum buffer size
-#define BUF_SIZE 512
+#define BUF_SIZE 1024
 
 #endif //MIDTERM_TICTACTOE_LOCAL_SOCK_H

@@ -27,24 +27,26 @@ using std::remove_if;
 using std::find_if;
 using std::map;
 using std::vector;
-//using std;
+
 
 /** Function prototypes **/
 char * allocate_hostname();
 int init_server();
 void * handle_client(void * arg);
-bool ProcessCommand(char buffer[], Player & player, bool & client_connected);
+bool ProcessCommand(char buffer[], Player * player, bool & client_connected);
 void sig_handler(int signum);
-void DisconnectPlayer(const Player & player);
-void ListGames(const Player & player);
-void CreateJoinGame(Player & player, string game_name);
+void DisconnectPlayer(const Player * player);
+void ListGames(const Player * player);
+void CreateJoinGame(Player * player, string game_name);
 void LoadPlayersFromDB();
+void SavePlayersToDB();
+string char2String(char *message);
 
 /** Global Variables **/
 int server_sock = 0;    // Server socket
 
 list<Game *> game_list;    // List of open games
-map<string, Player> players; // List of player in database
+map<string, Player *> players; // List of player in database
 
 // Mutex to make sure operations on games list are atomic
 pthread_mutex_t games_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -53,7 +55,8 @@ int main() {
 
     printf("Load players from db....\n");
     LoadPlayersFromDB();
-    printf("Has %ld players", players.size());
+    printf("Has %ld players\n", players.size());
+
 
     // Signals used to kill the server gracefully
     if(signal(SIGINT, sig_handler) == SIG_ERR)
@@ -205,97 +208,155 @@ void * handle_client(void * arg)
     bool isLogin = false;
 
     // Create the player
-    Player player(client_sock);
+    Player *player;
 
     // Always handle the client
     while(client_connected)
     {
 
-
-        // login
+        // Login required
         if (!isLogin)
         {
-            
-            continue;
-        }
-
-        // Process commands or pass game data
-        if(player.GetMode() == COMMAND)
-        {
-            // Read a line of text or until the buffer is full
-            for(i = 0; (i < (BUF_SIZE - 1)) && temp != '\n' && client_connected; ++i)
+            char msg[1024];
+            SendStatus(client_sock, NOTLOGIN);
+            ReceiveString(client_sock, msg);
+            string message = char2String(msg);
+            if (message == "LOGIN")
             {
-                // Receive a single character and make sure the client is still connected
-                if(read(client_sock, &temp, 1) == 0)
-                    client_connected = false;
-                else
-                    buffer[i] = temp;
-            }
 
-            // Reset temp so we don't get an infinite loop
-            temp = '\0';
-            buffer[i] = '\0';
-            buffer[i - 1] = '\0';
-            cout << "Received command \"" << buffer << "\" from " << player.GetName() << endl;
-            buffer[i - 1] = '\n';
+                char *username = (char *) "username";
+                SendString(client_sock, username);
+                ReceiveString(client_sock, msg);
 
-            // If there's an invalid command, tell the client
-            if(!ProcessCommand(buffer, player, client_connected))
-                SendStatus(player.GetSocket(), INVALID_CMD);
-        }
-        else if (player.GetMode() == INGAME)
-        {
-            // Get the game the player is a part of
-            pthread_mutex_lock(&games_lock);
-            auto game = find_if(game_list.begin(), game_list.end(),
-                      [player] (Game * game) { return game->HasPlayer(player); });
-            auto end = game_list.end();
-            pthread_mutex_unlock(&games_lock);
-
-            // Something horrible has gone wrong
-            if(game == end)
-                cout << "Somehow Player " << player.GetName() << " isn't a part of a game but is INGAME" << endl;
-            else
-            {
-                StatusCode status;
-                client_connected = ReceiveStatus(player.GetSocket(), &status);
-
-                // If the player is still connected, then perform the move
-                if(client_connected)
+                message = char2String(msg);
+                cout << message << " " << players.count(message) << endl;
+                if (players.count(message))
                 {
-                    switch(status)
+                    player = players[message];
+                    
+
+                    if (player->GetStatus() == 0)
                     {
-                        case MOVE:
-                            // Pass the row and column right along
-                            ReceiveInt(player.GetSocket(), &row);
-                            ReceiveInt(player.GetSocket(), &col);
-                            cout << "Received moved from " << player.GetName()
-                                 << ": row=" << row << ", col=" << col << endl;
+                        SendString(client_sock, (char *)"UNACTIVE");
+                        close(client_sock);
+                    }
+                    else
+                    {
+                        //SendString(client_sock, (char *) "password");
+                        int loginAttempt = 0;
+                        
+                        while (loginAttempt < 3 && !isLogin)
+                        {
+                            SendString(client_sock, (char *) "password");
+                            ReceiveString(client_sock, msg);
+                            message = char2String(msg);
+                            if (message == player->GetPassword())
+                            {
+                                SendString(client_sock, (char *) "Login sucessfully");
+                                SendString(client_sock, (char *) player->ToString().c_str());
+                                player->SetSocket(client_sock);
+                                isLogin = true;
+                                break;
+                            }
 
-                            SendStatus((*game)->GetOtherPlayer(player).GetSocket(), MOVE);
-                            SendInt((*game)->GetOtherPlayer(player).GetSocket(), row);
-                            client_connected = SendInt((*game)->GetOtherPlayer(player).GetSocket(), col);
-                            cout << "Sent move to " << (*game)->GetOtherPlayer(player).GetName() << endl;
+                            ++loginAttempt;
+                        }
 
-                            break;
-                        case WIN:
-                            cout << player.GetName() << " won a game against " << (*game)->GetOtherPlayer(player).GetName() << endl;
-                            client_connected = false;
-                            break;
-                        case DRAW:
-                            cout << player.GetName() << " tied against " << (*game)->GetOtherPlayer(player).GetName() << endl;
-                            client_connected = false;
-                            break;
-                        default:
-                            client_connected = SendStatus(player.GetSocket(), INVALID_CMD);
+                        if (!isLogin)
+                        {
+                            // Lock account
+                            SendString(client_sock, (char *) "LOCKED");
+                            player->SetStatus(0);
+                            SavePlayersToDB();
+                            close(client_sock);
+                            return (void *) 0;
+                        }
+                    }
+
+                }
+                else
+                {
+                    cout << "Username: " << message << " not exists" << endl;
+                    SendString(client_sock, (char *)"NOTFOUND");
+                    close(client_sock);
+                    return (void *) 0;
+                }
+
+            }
+        }
+        else
+        {
+            // Process commands or pass game data
+            if(player->GetMode() == COMMAND)
+            {
+
+                ReceiveString(client_sock, buffer);
+                cout << "Received command \"" << buffer << "\" from " << player->GetUserName() << endl;
+
+                // If there's an invalid command, tell the client
+                if(!ProcessCommand(buffer, player, client_connected))
+                    SendStatus(player->GetSocket(), INVALID_CMD);
+            }
+            else if (player->GetMode() == INGAME)
+            {
+                // Get the game the player is a part of
+                pthread_mutex_lock(&games_lock);
+                auto game = find_if(game_list.begin(), game_list.end(),
+                        [player] (Game * game) { return game->HasPlayer(player); });
+                auto end = game_list.end();
+                pthread_mutex_unlock(&games_lock);
+
+                // Something horrible has gone wrong
+                if(game == end)
+                    cout << "Somehow Player " << player->GetUserName() << " isn't a part of a game but is INGAME" << endl;
+                else
+                {
+                    StatusCode status;
+                    client_connected = ReceiveStatus(player->GetSocket(), &status);
+
+                    // If the player is still connected, then perform the move
+                    if(client_connected)
+                    {
+                        switch(status)
+                        {
+                            case MOVE:
+                                // Pass the row and column right along
+                                ReceiveInt(player->GetSocket(), &row);
+                                ReceiveInt(player->GetSocket(), &col);
+                                cout << "Received moved from " << player->GetName()
+                                    << ": row=" << row << ", col=" << col << endl;
+
+                                SendStatus((*game)->GetOtherPlayer(player)->GetSocket(), MOVE);
+                                SendInt((*game)->GetOtherPlayer(player)->GetSocket(), row);
+                                client_connected = SendInt((*game)->GetOtherPlayer(player)->GetSocket(), col);
+                                cout << "Sent move to " << (*game)->GetOtherPlayer(player)->GetUserName() << endl;
+
+                                break;
+                            case WIN:
+                                cout << player->GetUserName() << " won a game against " << (*game)->GetOtherPlayer(player)->GetUserName() << endl;
+                                player->SetScore(player->GetScore() + 5);
+                                player->SetMode(COMMAND);
+                                (*game)->GetOtherPlayer(player)->SetMode(COMMAND);
+                                (*game)->GetOtherPlayer(player)->SetScore((*game)->GetOtherPlayer(player)->GetScore() - 5);
+                                break;
+                            case DRAW:
+                                cout << player->GetUserName() << " tied against " << (*game)->GetOtherPlayer(player)->GetUserName() << endl;
+                                player->SetMode(COMMAND);
+                                (*game)->GetOtherPlayer(player)->SetMode(COMMAND);
+                                break;
+                            default:
+                                client_connected = SendStatus(player->GetSocket(), INVALID_CMD);
+                        }
                     }
                 }
             }
         }
+        
     }
 
     // The client disconnected on us D:
-    cout << "Player \"" << player.GetName() << "\" has disconnected" << endl;
+    cout << "Player \"" << player->GetUserName() << "\" has disconnected" << endl;
+    SavePlayersToDB();
     DisconnectPlayer(player);
     close(client_sock);
 
@@ -311,7 +372,7 @@ void * handle_client(void * arg)
  *
  * @return True if the command was valid, false otherwise
  */
-bool ProcessCommand(char buffer[], Player & player, bool & client_connected)
+bool ProcessCommand(char buffer[], Player * player, bool & client_connected)
 {
     char s_command[BUF_SIZE], s_arg[BUF_SIZE];
     string command, arg;
@@ -330,18 +391,18 @@ bool ProcessCommand(char buffer[], Player & player, bool & client_connected)
     else if (command == "register" && num == 2)
     {
         // Set the player's name
-        player.SetName(arg);
-        SendStatus(player.GetSocket(), REGISTERED);
+        player->SetName(arg);
+        SendStatus(player->GetSocket(), REGISTERED);
         cout << "Registered player name \"" << arg << "\"" << endl;
     }
     else if (command == "list" && num == 1)
     {
         ListGames(player);
-        cout << player.GetName() << " listed all open games" << endl;
+        cout << player->GetName() << " listed all open games" << endl;
     }
     else if (command == "leave" && num == 1)
     {
-        SendStatus(player.GetSocket(), PLAYER_DISCONNECT);
+        SendStatus(player->GetSocket(), PLAYER_DISCONNECT);
         client_connected = false;
     }
     else
@@ -351,7 +412,7 @@ bool ProcessCommand(char buffer[], Player & player, bool & client_connected)
 }
 
 // Create or join a player to a game
-void CreateJoinGame(Player & player, string game_name)
+void CreateJoinGame(Player * player, string game_name)
 {
     pthread_mutex_lock(&games_lock);
 
@@ -362,45 +423,54 @@ void CreateJoinGame(Player & player, string game_name)
     if(iter != game_list.end())
     {
         // Check if the game already has two players
-        if((*iter)->GetPlayer2() == -1)
+        if((*iter)->GetPlayer2()->GetSocket() == -1)
         {
-            // If not, join the two players together and notify them
-            (*iter)->SetPlayer2(player);
-            player.SetMode(INGAME);
-            SendStatus(player.GetSocket(), JOINED);
-            SendStatus((*iter)->GetPlayer1().GetSocket(), OTHER_JOINED);
+            // Check if the rank is difference
+            if ((*iter)->GetPlayer1()->GetRank() != player->GetRank())
+            {
+                SendStatus(player->GetSocket(), DIFFERENCE_RANK);
+            }
+            else
+            {
+                // Same rank => can battle
+                // If not, join the two players together and notify them
+                (*iter)->SetPlayer2(player);
+                player->SetMode(INGAME);
+                SendStatus(player->GetSocket(), JOINED);
+                SendStatus((*iter)->GetPlayer1()->GetSocket(), OTHER_JOINED);
+            }
         }
         else    // Otherwise, tell the player that game already exists
-            SendStatus(player.GetSocket(), GAME_EXISTS);
+            SendStatus(player->GetSocket(), GAME_EXISTS);
     }
     else
     {
         // Create a new game and add it to the list
         Game * game = new Game(game_name, player);
         game_list.push_back(game);
-        SendStatus(player.GetSocket(), CREATED);
-        player.SetMode(INGAME);
+        SendStatus(player->GetSocket(), CREATED);
+        player->SetMode(INGAME);
     }
 
     pthread_mutex_unlock(&games_lock);
 }
 
 // Send a list of all open games to the player
-void ListGames(const Player & player)
+void ListGames(const Player * player)
 {
     int num_open_games = 0;
 
     // Send a list of all of the games
-    SendStatus(player.GetSocket(), LIST);
-    write(player.GetSocket(), "---All Open Games---\n", 21);
+    SendStatus(player->GetSocket(), LIST);
+    write(player->GetSocket(), "---All Open Games---\n", 21);
 
     pthread_mutex_lock(&games_lock);
     for(auto iter = game_list.begin(); iter != game_list.end(); ++iter)
     {
         // Only print out the games that don't have a player 2
-        if((*iter)->GetPlayer2() == -1) {
-            write(player.GetSocket(), (*iter)->GetName().c_str(), (*iter)->GetName().length());
-            write(player.GetSocket(), "\n", 1);
+        if((*iter)->GetPlayer2()->GetSocket() == -1) {
+            write(player->GetSocket(), (*iter)->ToString().c_str(), (*iter)->ToString().length());
+            write(player->GetSocket(), "\n", 1);
             ++num_open_games;
         }
     }
@@ -408,15 +478,16 @@ void ListGames(const Player & player)
 
     // If there are no open games, tell the client
     if(num_open_games == 0)
-        write(player.GetSocket(), "No open games\n", 14);
+        write(player->GetSocket(), "No open games\n", 14);
 
     // Tell the client we're done sending
-    write(player.GetSocket(), "\0", 1);
+    write(player->GetSocket(), "\0", 1);
 }
 
 // Remove the player from any games they were a part of
-void DisconnectPlayer(const Player & player)
+void DisconnectPlayer(const Player * player)
 {
+            
     // Remove player from any games they were a part of and notify the other player
     pthread_mutex_lock(&games_lock);
 
@@ -424,9 +495,19 @@ void DisconnectPlayer(const Player & player)
     for(auto iter = game_list.begin(); iter != game_list.end(); ++iter)
     {
         if((*iter)->GetPlayer1() == player)
-            SendStatus((*iter)->GetPlayer2().GetSocket(), OTHER_DISCONNECT);
+        {
+            (*iter)->GetPlayer1()->SetScore((*iter)->GetPlayer1()->GetScore() - 5);
+            (*iter)->GetPlayer2()->SetScore((*iter)->GetPlayer2()->GetScore() + 5);
+            (*iter)->GetPlayer2()->SetMode(COMMAND);
+            SendStatus((*iter)->GetPlayer2()->GetSocket(), OTHER_DISCONNECT);
+        }
         else if ((*iter)->GetPlayer2() == player)
-            SendStatus((*iter)->GetPlayer1().GetSocket(), OTHER_DISCONNECT);
+        {
+            (*iter)->GetPlayer1()->SetScore((*iter)->GetPlayer1()->GetScore() + 5);
+            (*iter)->GetPlayer2()->SetScore((*iter)->GetPlayer2()->GetScore() - 5);
+            (*iter)->GetPlayer1()->SetMode(COMMAND);
+            SendStatus((*iter)->GetPlayer1()->GetSocket(), OTHER_DISCONNECT);
+        }
     }
 
     // Remove any games the player was a part of
@@ -449,15 +530,15 @@ void sig_handler(int signum)
             // Dynamically delete every game in the list and close every connected client
             for(auto iter = game_list.begin(); iter != game_list.end(); ++iter)
             {
-                close((*iter)->GetPlayer1().GetSocket());
-                close((*iter)->GetPlayer2().GetSocket());
+                close((*iter)->GetPlayer1()->GetSocket());
+                close((*iter)->GetPlayer2()->GetSocket());
 
                 // Remove the game
                 delete *iter;
             }
 
             game_list.clear();
-
+            SavePlayersToDB();
             printf("Exiting server\n");
             exit(0);
             break;
@@ -504,16 +585,57 @@ void LoadPlayersFromDB()
             // of a row to a vector
             row.push_back(word);
         }
-  
-        Player player;
-        player.SetID(std::stoi(row[0]));
-        player.SetUserName(row[1]);
-        player.SetPassword(row[2]);
-        player.SetRank(row[3]);
-        player.SetStatus(std::stoi(row[4]));
-        player.SetScore(std::stoi(row[5]));
 
-        players[player.GetUserName()] = player;
+        Player * player = new Player();
+        player->SetID(std::stoi(row[0]));
+        player->SetUserName(row[1]);
+        player->SetPassword(row[2]);
+        player->SetRank(row[3]);
+        player->SetStatus(std::stoi(row[4]));
+        player->SetScore(std::stoi(row[5]));
+
+
+        players[player->GetUserName()] = player;
     }
     fin.close();
+}
+
+string char2String(char *message)
+{
+    string msg = "";
+    for (int i = 0; message[i] != '\0' && int(message[i]) != 127; ++i)
+    {
+        msg += message[i];
+    }
+
+    return msg;
+}
+
+void SavePlayersToDB()
+{
+    // File pointer
+    std::fstream fout;
+
+  
+    // Create a new file to store updated data
+    fout.open("accountsnew.csv", std::ios::out);
+  
+    for (const auto &kv : players)
+    {
+        fout << kv.second->GetID() << ",";
+        fout << kv.second->GetUserName() << ",";
+        fout << kv.second->GetPassword() << ",";
+        fout << kv.second->GetRank() << ",";
+        fout << kv.second->GetStatus() << ",";
+        fout << kv.second->GetScore() << ",\n";
+    }
+    
+    //fin.close();
+    fout.close();
+  
+    // removing the existing file
+    remove("accounts.csv");
+  
+    // renaming the updated file with the existing file name
+    rename("accountsnew.csv", "accounts.csv");
 }

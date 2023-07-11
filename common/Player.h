@@ -25,6 +25,7 @@ public:
     // Getters and Setters
     void SetName(string name);
     string GetName() const;
+    void SetSocket(int socket);
     int GetSocket() const;
     player_modes GetMode() const;
     void SetMode(player_modes mode);
@@ -43,6 +44,8 @@ public:
 
     // Equality operator overload
     bool operator==(const Player & other) const;
+
+    string ToString() const;
 
 private:
     int m_socket;
