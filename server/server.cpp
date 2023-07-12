@@ -221,7 +221,9 @@ void * handle_client(void * arg)
             SendStatus(client_sock, NOTLOGIN);
             ReceiveString(client_sock, msg);
             string message = char2String(msg);
-            if (message == "LOGIN")
+            bool isInputLogin = (message == "login");
+            bool isInputSignup = (message == "signup");
+            if (isInputLogin || isInputSignup)
             {
 
                 char *username = (char *) "username";
@@ -229,73 +231,107 @@ void * handle_client(void * arg)
                 ReceiveString(client_sock, msg);
 
                 message = char2String(msg);
-                cout << message << " " << players.count(message) << endl;
+
                 if (players.count(message))
                 {
-                    player = players[message];
+                    if (isInputLogin)
+                    {
+                        player = players[message];
                     
 
-                    if (player->GetStatus() == 0)
-                    {
-                        SendString(client_sock, (char *)"UNACTIVE");
-                        close(client_sock);
-                    }
-                    else
-                    {
-                        //SendString(client_sock, (char *) "password");
-                        int loginAttempt = 0;
-                        
-                        while (loginAttempt < 3 && !isLogin)
+                        if (player->GetStatus() == 0)
                         {
-                            SendString(client_sock, (char *) "password");
-                            ReceiveString(client_sock, msg);
-                            message = char2String(msg);
-                            if (message == player->GetPassword())
+                            SendString(client_sock, (char *)"UNACTIVE");
+                            close(client_sock);
+                        }
+                        else
+                        {
+                            //SendString(client_sock, (char *) "password");
+                            int loginAttempt = 0;
+                            
+                            while (loginAttempt < 3 && !isLogin)
                             {
-                                SendString(client_sock, (char *) "Login sucessfully");
-                                SendString(client_sock, (char *) player->ToString().c_str());
-                                player->SetSocket(client_sock);
-                                isLogin = true;
-                                break;
+                                SendString(client_sock, (char *) "password");
+                                ReceiveString(client_sock, msg);
+                                message = char2String(msg);
+                                if (message == player->GetPassword())
+                                {
+                                    SendString(client_sock, (char *) "Login sucessfully");
+                                    SendString(client_sock, (char *) player->ToString().c_str());
+                                    player->SetSocket(client_sock);
+                                    isLogin = true;
+                                    break;
+                                }
+
+                                ++loginAttempt;
                             }
 
-                            ++loginAttempt;
+                            if (!isLogin)
+                            {
+                                // Lock account
+                                SendString(client_sock, (char *) "LOCKED");
+                                player->SetStatus(0);
+                                SavePlayersToDB();
+                                close(client_sock);
+                                return (void *) 0;
+                            }
                         }
-
-                        if (!isLogin)
-                        {
-                            // Lock account
-                            SendString(client_sock, (char *) "LOCKED");
-                            player->SetStatus(0);
-                            SavePlayersToDB();
-                            close(client_sock);
-                            return (void *) 0;
-                        }
+                    }
+                    else // signup
+                    {
+                        SendString(client_sock, (char *)"EXISTS");
+                        cout << "Username: " << message << " exists!" << endl;
+                        SavePlayersToDB();
+                        close(client_sock);
+                        return (void *) 0;
                     }
 
                 }
                 else
                 {
-                    cout << "Username: " << message << " not exists" << endl;
-                    SendString(client_sock, (char *)"NOTFOUND");
-                    close(client_sock);
-                    return (void *) 0;
+                    if (isInputLogin)
+                    {
+                        cout << "Username: " << message << " not exists" << endl;
+                        SendString(client_sock, (char *)"NOTFOUND");
+                        close(client_sock);
+                        return (void *) 0;
+                    }
+                    else
+                    {
+                        SendString(client_sock, (char *) "password");
+                        ReceiveString(client_sock, msg);
+                        Player *newPlayer = new Player();
+                        newPlayer->SetID(11);
+                        newPlayer->SetUserName(message);
+                        newPlayer->SetPassword(char2String(msg));
+                        newPlayer->SetSocket(client_sock);
+                        newPlayer->SetScore(0);
+                        newPlayer->SetStatus(1);
+                        newPlayer->SetMode(COMMAND);
+                        players[message] = newPlayer;
+                        player = newPlayer;
+                        SendString(client_sock, (char *) "Signup sucessfully");
+                        SavePlayersToDB();
+                    }
                 }
 
             }
         }
-        else
+        
+        if (isLogin)
         {
             // Process commands or pass game data
             if(player->GetMode() == COMMAND)
             {
 
-                ReceiveString(client_sock, buffer);
-                cout << "Received command \"" << buffer << "\" from " << player->GetUserName() << endl;
-
-                // If there's an invalid command, tell the client
-                if(!ProcessCommand(buffer, player, client_connected))
-                    SendStatus(player->GetSocket(), INVALID_CMD);
+                if (ReceiveString(client_sock, buffer) && char2String(buffer).size() > 0)
+                {
+                    cout << "Received command \"" << buffer << "\" from " << player->GetUserName() << endl;
+                    // If there's an invalid command, tell the client
+                    if(!ProcessCommand(buffer, player, client_connected))
+                        SendStatus(player->GetSocket(), INVALID_CMD);
+                }
+               
             }
             else if (player->GetMode() == INGAME)
             {
@@ -331,6 +367,15 @@ void * handle_client(void * arg)
                                 client_connected = SendInt((*game)->GetOtherPlayer(player)->GetSocket(), col);
                                 cout << "Sent move to " << (*game)->GetOtherPlayer(player)->GetUserName() << endl;
 
+                                // Other disconnect
+                                if (!client_connected)
+                                {
+                                    client_connected = true;
+                                    player->SetMode(COMMAND);
+                                    (*game)->GetOtherPlayer(player)->SetMode(COMMAND);
+                                    game_list.remove(*game);
+                                }
+
                                 break;
                             case WIN:
                                 cout << player->GetUserName() << " won a game against " << (*game)->GetOtherPlayer(player)->GetUserName() << endl;
@@ -338,11 +383,13 @@ void * handle_client(void * arg)
                                 player->SetMode(COMMAND);
                                 (*game)->GetOtherPlayer(player)->SetMode(COMMAND);
                                 (*game)->GetOtherPlayer(player)->SetScore((*game)->GetOtherPlayer(player)->GetScore() - 5);
+                                game_list.remove(*game);
                                 break;
                             case DRAW:
                                 cout << player->GetUserName() << " tied against " << (*game)->GetOtherPlayer(player)->GetUserName() << endl;
                                 player->SetMode(COMMAND);
                                 (*game)->GetOtherPlayer(player)->SetMode(COMMAND);
+                                game_list.remove(*game);
                                 break;
                             default:
                                 client_connected = SendStatus(player->GetSocket(), INVALID_CMD);
@@ -603,7 +650,7 @@ void LoadPlayersFromDB()
 string char2String(char *message)
 {
     string msg = "";
-    for (int i = 0; message[i] != '\0' && int(message[i]) != 127; ++i)
+    for (int i = 0; message[i] != '\0' && int(message[i]) != 127 && int(message[i]) != 3; ++i)
     {
         msg += message[i];
     }

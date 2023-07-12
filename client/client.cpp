@@ -57,15 +57,18 @@ int main(int argc, char ** argv) {
             case CREATED:
                 cout << "New game created. You are X's. Waiting for a player to connect..." << endl;
                 ingame = true;
+                board = Board();
                 board.SetType(EXXES);
                 break;
             case JOINED:
                 cout << "You joined the game. You are O's. Other player's turn." << endl;
                 ingame = true;
+                board = Board();
                 board.SetType(OHS);
                 break;
             case OTHER_JOINED:
                 cout << "Somebody joined your game!" << endl;
+                board = Board();
                 TakeTurn(board);
                 break;
             case MOVE:
@@ -95,6 +98,11 @@ int main(int argc, char ** argv) {
                 {
                     // Have the player take their turn
                     game_over = TakeTurn(board);
+                    if (game_over)
+                    {
+                        ingame = false;
+                        game_over = false;
+                    }
                 }
 
                 break;
@@ -126,7 +134,7 @@ int main(int argc, char ** argv) {
                 cout << "Invalid Command" << endl;
                 break;
             case NOTLOGIN:
-                cout << "Please login: " << endl;
+                cout << "Please login or signin: " << endl;
                 break;
             case DIFFERENCE_RANK:
                 cout << "You can't entry this room because difference ranking" << endl;
@@ -136,84 +144,120 @@ int main(int argc, char ** argv) {
                 exit(1);
         }
 
-        // Send commands if not in game yet
-        if(!ingame)
+        if (!isLogin)
         {
 
-            if (!isLogin)
+            std::string input = "";
+
+            while (input != "login" && input != "signup")
             {
-                SendString(client_sock, (char *) "LOGIN");
-                char msg[1024];
-                ReceiveString(client_sock, msg);
-                std::string message = char2String(msg);
+                cout << "Input command (login or signup): ";
 
-                if (message == "username")
+                // Read a line of text from the user
+                fgets(buffer, BUF_SIZE - 1, stdin);
+                int i = 0;
+                for (i = 0; buffer[i] != '\n'; ++i)
                 {
-                    cout << "Input username: ";
-                    char username[1024];
-                    std::cin >> username;
 
-                    SendString(client_sock, username);
-                    ReceiveString(client_sock, msg);
-                    message = char2String(msg);
-
-                    if (message == "UNACTIVE")
-                    {
-                        cout << "Your account was disabled" << endl;
-                        close(client_sock);
-                        exit(1);
-                    }
-                    else if (message == "password")
-                    {
-                        while (message == "password")
-                        {
-                            cout << "Input password: ";
-                            char password[1024];
-                            std::cin >> password;
-
-                            SendString(client_sock, password);
-                            ReceiveString(client_sock, msg);
-                            message = char2String(msg);
-                        }
-
-                        if (message == "LOCKED")
-                        {
-                            cout << "You took wrong password 3 times" << endl;
-                            cout << "Your account will be disabled" << endl;
-                            cout << "Please contact admin to reactive your account" << endl;
-                            close(client_sock);
-                            exit(1);
-                        }
-                        else if (message == "Login sucessfully")
-                        {
-                            isLogin = true;
-                            cout << "Your account information:" << endl;
-                            ReceiveString(client_sock, msg);
-                            cout << char2String(msg) << endl;
-                        }
-                    }
                 }
-                else if (message == "NOTFOUND")
+                buffer[i] = '\0';   
+                input = buffer;
+            }
+
+            
+            // Write it out to the server
+            SendString(client_sock, buffer);
+
+            char msg[1024];
+            ReceiveString(client_sock, msg);
+            std::string message = char2String(msg);
+            std::cout << (message == "username") << " " << message.size() << " " << std::endl;
+            if (message == "username")
+            {
+                cout << "Input username: ";
+                char username[1024];
+                std::cin >> username;
+
+                SendString(client_sock, username);
+                ReceiveString(client_sock, msg);
+                message = char2String(msg);
+
+                if (message == "UNACTIVE")
                 {
-                    cout << "Your account not exist" << endl;
+                    cout << "Your account was disabled" << endl;
                     close(client_sock);
                     exit(1);
                 }
+                else if (message == "password")
+                {
+                    while (message == "password")
+                    {
+                        cout << "Input password: ";
+                        char password[1024];
+                        std::cin >> password;
 
+                        SendString(client_sock, password);
+                        ReceiveString(client_sock, msg);
+                        message = char2String(msg);
+                    }
+
+                    if (message == "LOCKED")
+                    {
+                        cout << "You took wrong password 3 times" << endl;
+                        cout << "Your account will be disabled" << endl;
+                        cout << "Please contact admin to reactive your account" << endl;
+                        close(client_sock);
+                        exit(1);
+                    }
+                    else if (message == "Login sucessfully")
+                    {
+                        isLogin = true;
+                        cout << "Your account information:" << endl;
+                        ReceiveString(client_sock, msg);
+                        cout << char2String(msg) << endl;
+                    }
+                    else if (message == "Signup sucessfully")
+                    {
+                        cout << "Your account has been created" << endl;
+                    }
+                }
+                else if (message == "EXISTS")
+                {
+                    cout << "This account already exists" << endl;
+                    close(client_sock);
+                    exit(1);
+                }
             }
-
-            cout << "Enter a command: ";
-
-            // Read a line of text from the user
-            fgets(buffer, BUF_SIZE - 1, stdin);
-            int i = 0;
-            for (i = 0; buffer[i] != '\n'; ++i)
+            else if (message == "NOTFOUND")
             {
-
+                cout << "Your account not exist" << endl;
+                close(client_sock);
+                exit(1);
             }
-            buffer[i] = '\0';
-            // Write it out to the server
-            SendString(client_sock, buffer);
+
+        }
+        if(!ingame && isLogin) // Send commands if not in game yet
+        {
+            std::string input = "";
+            do 
+            {
+                // flush any data from the internal buffers
+                int c;
+                while((c = getchar()) != '\n' && c != EOF); 
+                cout << "\nEnter a command: ";
+
+                // Read a line of text from the user
+                fgets(buffer, BUF_SIZE - 1, stdin);
+                int i = 0;
+                for (i = 0; buffer[i] != '\n'; ++i)
+                {
+
+                }
+                buffer[i] = '\0';
+                input = buffer;
+                
+            } while (input.size() == 0);
+            SendString(client_sock, buffer);    
         }
     }
 
@@ -314,13 +358,13 @@ bool TakeTurn(Board & board)
     if(board.IsWon())
     {
         cout << "YOU WIN!!!!" << endl;
-        game_over = false;
+        game_over = true;
         SendStatus(client_sock, WIN);
     }
     else if (board.IsDraw())
     {
         cout << "You tied ._." << endl;
-        game_over = false;
+        game_over = true;
         SendStatus(client_sock, DRAW);
     }
 
@@ -342,6 +386,5 @@ std::string char2String(char *message)
     {
         msg += message[i];
     }
-
     return msg;
 }

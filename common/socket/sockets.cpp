@@ -4,6 +4,7 @@
 
 #include <unistd.h>
 #include "sockets.h"
+#include <iostream>
 
 /**
  * Send out an int to the specified player
