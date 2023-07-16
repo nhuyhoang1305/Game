@@ -71,9 +71,9 @@ bool Board::TypeIsWon(CellType type) const
 }
 
 // Check if the player won
-bool Board::IsWon() const
+bool Board::IsWon(int row, int col) const
 {
-    return TypeIsWon(m_type);
+    return TypeIsWon(m_type, row, col);
 }
 
 // Check if the players tied
@@ -95,14 +95,14 @@ bool Board::IsDraw() const
 }
 
 // Check if the player lost
-bool Board::IsLost() const
+bool Board::IsLost(int row, int col) const
 {
     bool lost = false;
 
     if(m_type == EXXES)
-        lost = TypeIsWon(OHS);
+        lost = TypeIsWon(OHS, row, col);
     else
-        lost = TypeIsWon(EXXES);
+        lost = TypeIsWon(EXXES, row, col);
 
     return lost;
 }
@@ -110,21 +110,20 @@ bool Board::IsLost() const
 // Print out the board
 void Board::DrawBoard() const
 {
-    cout << PrintCell(m_board[0][0]) << "|"
-         << PrintCell(m_board[0][1]) << "|"
-         << PrintCell(m_board[0][2]) << endl;
 
-    cout << "-----" << endl;
-
-    cout << PrintCell(m_board[1][0]) << "|"
-         << PrintCell(m_board[1][1]) << "|"
-         << PrintCell(m_board[1][2]) << endl;
-
-    cout << "-----" << endl;
-
-    cout << PrintCell(m_board[2][0]) << "|"
-         << PrintCell(m_board[2][1]) << "|"
-         << PrintCell(m_board[2][2]) << endl;
+    for (int i = 0; i < MAX_ROWS; ++i)
+    {
+        for (int j = 0; j < MAX_COLS; ++j)
+        {
+            cout << PrintCell(m_board[i][j]) << "|";
+        }
+        cout << endl;
+        for (int j = 0; j < 2*MAX_COLS - 1; ++j)
+        {
+            cout << "-";
+        }
+        cout << endl;
+    }
 }
 
 char Board::PrintCell(CellType cell) const
@@ -147,4 +146,81 @@ bool Board::IsBlank(int row, int col) const
         isblank = true;
 
     return isblank;
+}
+
+// Check if a certain cell type won
+bool Board::TypeIsWon(CellType type, int row, int col) const
+{
+    int countLess = 0, countGreat = 0;
+	// check x to top and (x + 1) to down
+	for (int i = row; i >= 0; i--){
+		if (m_board[i][col] != type)
+			break;
+		countLess++;
+	}
+	for (int i = row + 1; i < MAX_ROWS; i++){
+		if (m_board[i][col] != type)
+			break;
+		countGreat++;
+	}
+	if (countLess + countGreat >= 5)
+		return true;
+
+	//check y to left and y + 1 to right
+	countLess = 0, countGreat = 0;
+	for (int i = col; i >= 0; i--){
+		if (m_board[row][i] != type)
+			break;
+		countLess++;
+	}
+	for (int i = col + 1; i < MAX_COLS; i++){
+		if (m_board[row][i] != type)
+			break;
+		countGreat++;
+	}
+	if (countLess + countGreat >= 5)
+		return true;
+
+	// check diagonal
+	countLess = 0, countGreat = 0;
+	for (int i = row, j = col; IsValid(i, j); i--, j--) {
+		if (m_board[i][j] != type)
+			break;
+		countGreat++;
+	}
+
+	for (int i = row + 1, j = col + 1; IsValid(i, j); i++, j++) {
+		if (m_board[i][j] != type)
+			break;
+		countGreat++;
+	}
+
+	if (countLess + countGreat >= 5)
+		return true;
+
+
+	// check diagonal
+	countLess = 0, countGreat = 0;
+	for (int i = row, j = col; IsValid(i, j); i++, j--) {
+		if (m_board[i][j] != type)
+			break;
+		countGreat++;
+	}
+
+	for (int i = row - 1, j = col + 1; IsValid(i, j); i--, j++) {
+		if (m_board[i][j] != type)
+			break;
+		countGreat++;
+	}
+
+	if (countLess + countGreat >= 5)
+		return true;
+
+	return false;
+}
+
+// check if a cell valid
+bool Board::IsValid(int row, int col) const
+{
+    return 0 <= row && row < MAX_ROWS && 0 <= col && col < MAX_COLS;
 }

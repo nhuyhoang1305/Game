@@ -83,7 +83,7 @@ int main(int argc, char ** argv) {
                 board.OtherMakeMove(row, col);
 
                 // Check if receiving move is loss or tie
-                if(board.IsLost())
+                if(board.IsLost(row, col))
                 {
                     // You lost D:!!!
                     cout << "You lost! D:" << endl;
@@ -324,9 +324,9 @@ bool TakeTurn(Board & board)
         // Make sure two integers were inputted
         if(scanf("%d %d", &row, &col) == 2)
         {
-            if(row < 0 || row > 2)
+            if(row < 0 || row > MAX_ROWS)
                 printf("Invalid row input. Try again.\n");
-            else if (col < 0 || col > 2)
+            else if (col < 0 || col > MAX_COLS)
                 printf("Invalid column input. Try again.\n");
             else if(!board.IsBlank(row, col))
                 printf("That cell isn't blank. Try again.\n");
@@ -355,7 +355,7 @@ bool TakeTurn(Board & board)
         ServerDisconnected();
 
     // Check for win/draw
-    if(board.IsWon())
+    if(board.IsWon(row, col))
     {
         cout << "YOU WIN!!!!" << endl;
         game_over = true;
